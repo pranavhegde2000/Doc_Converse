@@ -1,11 +1,13 @@
 import os
 from lib2to3.fixes.fix_input import context
 from pathlib import Path
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from pinecone import Pinecone, ServerlessSpec
 from dotenv import load_dotenv
+from langchain.chains import LLMChain
 from openai import api_key, embeddings
 
 load_dotenv()
@@ -28,8 +30,26 @@ class RAGProcessor:
                     region='us-east-1'
                 )
             )
+
+
         self.index = self.pc.Index(self.index_name)
         self.embeddings = OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'))
+        self.llm = ChatOpenAI(model="gpt-3.5-turbo", api_key=os.getenv('OPENAI_API_KEY'))
+
+        #Prompt Template
+        self.prompt = ChatPromptTemplate.from_template(
+            """You are a helpful assistant that answers questions based on the provided context.
+
+            Context: {context}
+
+            Question: {query}
+
+            Answer the question based only on the provided context. If the context doesn't contain
+            enough information to answer the question, simply say that you don't have enough information.
+            """
+        )
+
+        self.chain = LLMChain(llm=self.llm, prompt=self.prompt)
 
     def process_document(self, file_path):
         file_path = Path(file_path)
@@ -39,7 +59,8 @@ class RAGProcessor:
         documents = loader.load()
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
-            chunk_overlap=200
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ". ", " ", ""]
         )
         chunks = text_splitter.split_documents(documents)
 
@@ -68,4 +89,8 @@ class RAGProcessor:
 
         # Extract and return relevant context
         contexts = [match['metadata']['text'] for match in results['matches']]
-        return "\n".join(contexts)
+        clean_context = " ".join(contexts).replace("\n", " ").replace("  ", " ")
+        return clean_context
+
+    def generate_answer(self, query, context):
+        return self.chain.run(context=context, query=query)

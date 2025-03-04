@@ -45,5 +45,9 @@ class QueryView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         rag_processor = RAGProcessor()
         context = rag_processor.query_documents(query)
+        answer = rag_processor.generate_answer(query, context)
 
-        return Response({'context': context})
+        return Response({
+            'context': context,
+            'answer': answer
+        })
